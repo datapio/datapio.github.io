@@ -85,7 +85,7 @@
       },
       "/docs/cicd/pipeline-as-code": {
         "uri": "/docs/cicd/pipeline-as-code",
-        "content": "\n# Overview\n\n**Datapio** relies on [NodeJS](https://nodejs.org) to run the pipeline.\nIts code is executed in a sandboxed environment.\n\nA pipeline **SHOULD** declare:\n\n - a name\n - a set of tools used by the pipeline to interact with other softwares such as:\n    - [Docker](https://www.docker.com)\n    - [Tekton](https://tekton.dev)\n    - [Vault](https://vaultproject.io)\n    - [Helm](https://helm.sh)\n    - [Git](https://git-scm.com)\n    - ...\n - an environment (constructed using the set of tools)\n - a list of stages, representing the steps of your pipeline\n\n# Creating your pipeline\n\nThe pipeline's entrypoint is located (relative to the root of your repository) by default at `.datatpio/index.js`.\nThis can be overridden in the project's specification.\n\n**Example:**\n\n```javascript\npipeline({\n  name: 'Build and deploy my webservice',\n  tools: [\n    'docker',\n    'git',\n    // ...\n  ]\n  // ...\n})\n```\n\n**NB:** Using the function `include` you can split your pipeline into multiple files:\n\n```javascript\n// include paths are relative to the root of your repository\nconst { some_stage } = include('.datapio/some.js')\n\npipeline({\n  // ...\n  stages: [\n    some_stage('some param')\n  ]\n})\n```\n\n## Building the pipeline's environment\n\nUsing the pipeline's tools, you can create an environment that will be passed to each of your pipeline's stage.\n\n\n**Example**:\n\n```javascript\npipeline({\n  // ...\n  environment: async ({ git }) => ({\n    platform: ({ master: 'prod', dev: 'preprod' })[git.branch()] || null,\n    docker_image_name: 'example/webservice',\n    docker_image_tag: git.commit().sha\n  }),\n  // ...\n})\n```\n\n**NB:** This function can return anything, no typing enforced.\n\n## Creating your stages\n\nEach stage contains:\n\n - a `script` function, describing what needs to be done to perform the stage\n - an optional `when` function, describing wether the stage should be skipped or not\n\n**Example:**\n\n```javascript\npipeline({\n  // ...\n  stages: [\n    {\n      name: 'Build docker image',\n      script: async (env, { docker }) => {\n        await docker.build({\n          dockerfile: './Dockerfile',\n          context: '.',\n          tags: [\n            `${env.docker_image_name}:${env.docker_image_tag}`,\n            `${env.docker_image_name}:latest`\n          ]\n        })\n      }\n    },\n    {\n      name: 'Push docker image',\n      when: async env => env.platform !== null,\n      script: async (env, { docker, vault }) => {\n        const { registry, username, password } = await vault.read(\n          `secret/data/docker/${env.platform}`\n        )\n\n        await docker.push({\n          registry,\n          credentials: { username, password },\n          tags: [\n            `${env.docker_image_name}:${env.docker_image_tag}`,\n            `${env.docker_image_name}:latest`\n          ]\n        })\n      }\n    },\n    {\n      name: 'Deploy Helm chart',\n      when: async env => env.platform !== null,\n      script: async (env, { helm, vault }) => {\n        const { kubeconfig } = await vault.read(\n          `secret/data/kubeconfig/${env.platform}`\n        )\n\n        await helm.deploy({\n          chart: './chart',\n          release: {\n            name: 'my-webservice',\n            namespace: 'default'\n          },\n          values: {\n            image: {\n              name: env.docker_iamge_name,\n              tag: env.docker_image_tag\n            }\n          }\n        })\n      }\n    }\n  ]\n})\n```\n",
+        "content": "\n# Overview\n\n**Datapio** relies on [NodeJS](https://nodejs.org) to run the pipeline.\nIts code is executed in a sandboxed environment.\n\nA pipeline **SHOULD** declare:\n\n - a name\n - a set of tools used by the pipeline to interact with other softwares such as:\n    - [Docker](https://www.docker.com)\n    - [Tekton](https://tekton.dev)\n    - [Vault](https://vaultproject.io)\n    - [Helm](https://helm.sh)\n    - [Git](https://git-scm.com)\n    - ...\n - an environment (constructed using the set of tools)\n - a list of stages, representing the steps of your pipeline\n\n# Creating your pipeline\n\nThe pipeline's entrypoint is located (relative to the root of your repository) by default at `.datatpio/index.js`.\nThis can be overridden in the project's specification.\n\n**Example:**\n\n```javascript\npipeline({\n  name: 'Build and deploy my webservice',\n  tools: [\n    'docker',\n    'git',\n    // ...\n  ]\n  // ...\n})\n```\n\n**NB:** Using the function `include` you can split your pipeline into multiple files:\n\n```javascript\n// include paths are relative to the root of your repository\nconst { some_stage } = include('.datapio/some.js')\n\npipeline({\n  // ...\n  stages: [\n    some_stage('some param')\n  ]\n})\n```\n\n## Building the pipeline's environment\n\nUsing the pipeline's tools, you can create an environment that will be passed to each of your pipeline's stage.\n\n\n**Example**:\n\n```javascript\npipeline({\n  // ...\n  environment: async (workspace_pvc, { git }) => ({\n    platform: ({ master: 'prod', dev: 'preprod' })[git.branch()] || null,\n    docker_image_name: 'example/webservice',\n    docker_image_tag: git.commit().sha\n  }),\n  // ...\n})\n```\n\nThe `workspace_pvc` contains the name of the `PersitentVolumeClaim` allocated for the current workspace.\nIt is especially useful when running a *Tekton* `Task` that needs to live in the current workspace.\n\n**NB:** This function can return anything, no typing enforced.\n\n## Creating your stages\n\nEach stage contains:\n\n - a `script` function, describing what needs to be done to perform the stage\n - an optional `when` function, describing wether the stage should be skipped or not\n\n**Example:**\n\n```javascript\npipeline({\n  // ...\n  stages: [\n    {\n      name: 'Build docker image',\n      script: async (env, { docker }) => {\n        await docker.build({\n          dockerfile: './Dockerfile',\n          context: '.',\n          tags: [\n            `${env.docker_image_name}:${env.docker_image_tag}`,\n            `${env.docker_image_name}:latest`\n          ]\n        })\n      }\n    },\n    {\n      name: 'Push docker image',\n      when: async env => env.platform !== null,\n      script: async (env, { docker, vault }) => {\n        const { registry, username, password } = await vault.read(\n          `secret/data/docker/${env.platform}`\n        )\n\n        await docker.push({\n          registry,\n          credentials: { username, password },\n          tags: [\n            `${env.docker_image_name}:${env.docker_image_tag}`,\n            `${env.docker_image_name}:latest`\n          ]\n        })\n      }\n    },\n    {\n      name: 'Deploy Helm chart',\n      when: async env => env.platform !== null,\n      script: async (env, { helm, vault }) => {\n        const { kubeconfig } = await vault.read(\n          `secret/data/kubeconfig/${env.platform}`\n        )\n\n        await helm.deploy({\n          chart: './chart',\n          release: {\n            name: 'my-webservice',\n            namespace: 'default'\n          },\n          values: {\n            image: {\n              name: env.docker_iamge_name,\n              tag: env.docker_image_tag\n            }\n          }\n        })\n      }\n    }\n  ]\n})\n```\n",
         "title": "Pipeline As Code",
         "abstract": "Complex pipelines made easy, portable and reusable.\nLearn more about the syntax and architecture.\n",
         "seeAlso": [
@@ -254,7 +254,7 @@
         "title": 2,
         "abstract": 10,
         "seeAlso": 2,
-        "content": 215
+        "content": 232
       },
       "/docs/cicd/pipeline-scheduling-model": {
         "title": 3,
@@ -5014,6 +5014,18 @@
                 },
                 "df": 2
               }
+            },
+            "v": {
+              "docs": {},
+              "df": 0,
+              "e": {
+                "docs": {
+                  "/docs/cicd/pipeline-as-code": {
+                    "tf": 1
+                  }
+                },
+                "df": 1
+              }
             }
           }
         },
@@ -5239,7 +5251,7 @@
                           "tf": 2
                         },
                         "/docs/cicd/pipeline-as-code": {
-                          "tf": 1
+                          "tf": 1.4142135623730951
                         }
                       },
                       "df": 3
@@ -6391,6 +6403,49 @@
               }
             }
           },
+          "u": {
+            "docs": {},
+            "df": 0,
+            "r": {
+              "docs": {},
+              "df": 0,
+              "r": {
+                "docs": {},
+                "df": 0,
+                "e": {
+                  "docs": {},
+                  "df": 0,
+                  "n": {
+                    "docs": {},
+                    "df": 0,
+                    "t": {
+                      "docs": {
+                        "/docs/cicd/pipeline-as-code": {
+                          "tf": 1.4142135623730951
+                        },
+                        "/docs/cloud/catalog/database-system": {
+                          "tf": 1
+                        },
+                        "/docs/cloud/catalog/ingress-system": {
+                          "tf": 1
+                        },
+                        "/docs/cloud/catalog/mq-system": {
+                          "tf": 1
+                        },
+                        "/docs/cloud/catalog/pipeline-system": {
+                          "tf": 1
+                        },
+                        "/docs/cloud/catalog/secret-system": {
+                          "tf": 1
+                        }
+                      },
+                      "df": 6
+                    }
+                  }
+                }
+              }
+            }
+          },
           "m": {
             "docs": {},
             "df": 0,
@@ -6465,46 +6520,6 @@
                           "df": 1
                         }
                       }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "u": {
-            "docs": {},
-            "df": 0,
-            "r": {
-              "docs": {},
-              "df": 0,
-              "r": {
-                "docs": {},
-                "df": 0,
-                "e": {
-                  "docs": {},
-                  "df": 0,
-                  "n": {
-                    "docs": {},
-                    "df": 0,
-                    "t": {
-                      "docs": {
-                        "/docs/cloud/catalog/database-system": {
-                          "tf": 1
-                        },
-                        "/docs/cloud/catalog/ingress-system": {
-                          "tf": 1
-                        },
-                        "/docs/cloud/catalog/mq-system": {
-                          "tf": 1
-                        },
-                        "/docs/cloud/catalog/pipeline-system": {
-                          "tf": 1
-                        },
-                        "/docs/cloud/catalog/secret-system": {
-                          "tf": 1
-                        }
-                      },
-                      "df": 5
                     }
                   }
                 }
@@ -7239,6 +7254,70 @@
                                                   },
                                                   "df": 1
                                                 }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "t": {
+                    "docs": {},
+                    "df": 0,
+                    "e": {
+                      "docs": {},
+                      "df": 0,
+                      "n": {
+                        "docs": {},
+                        "df": 0,
+                        "t": {
+                          "docs": {},
+                          "df": 0,
+                          "v": {
+                            "docs": {},
+                            "df": 0,
+                            "o": {
+                              "docs": {},
+                              "df": 0,
+                              "l": {
+                                "docs": {},
+                                "df": 0,
+                                "u": {
+                                  "docs": {},
+                                  "df": 0,
+                                  "m": {
+                                    "docs": {},
+                                    "df": 0,
+                                    "e": {
+                                      "docs": {},
+                                      "df": 0,
+                                      "c": {
+                                        "docs": {},
+                                        "df": 0,
+                                        "l": {
+                                          "docs": {},
+                                          "df": 0,
+                                          "a": {
+                                            "docs": {},
+                                            "df": 0,
+                                            "i": {
+                                              "docs": {},
+                                              "df": 0,
+                                              "m": {
+                                                "docs": {
+                                                  "/docs/cicd/pipeline-as-code": {
+                                                    "tf": 1
+                                                  }
+                                                },
+                                                "df": 1
                                               }
                                             }
                                           }
@@ -8726,9 +8805,36 @@
                         "docs": {
                           "/docs/cicd/manage-projects": {
                             "tf": 2
+                          },
+                          "/docs/cicd/pipeline-as-code": {
+                            "tf": 1.4142135623730951
                           }
                         },
-                        "df": 1
+                        "df": 2,
+                        "e": {
+                          "docs": {},
+                          "df": 0,
+                          "_": {
+                            "docs": {},
+                            "df": 0,
+                            "p": {
+                              "docs": {},
+                              "df": 0,
+                              "v": {
+                                "docs": {},
+                                "df": 0,
+                                "c": {
+                                  "docs": {
+                                    "/docs/cicd/pipeline-as-code": {
+                                      "tf": 1.4142135623730951
+                                    }
+                                  },
+                                  "df": 1
+                                }
+                              }
+                            }
+                          }
+                        }
                       }
                     }
                   }
@@ -9393,6 +9499,14 @@
               "o": {
                 "docs": {},
                 "df": 0,
+                "c": {
+                  "docs": {
+                    "/docs/cicd/pipeline-as-code": {
+                      "tf": 1
+                    }
+                  },
+                  "df": 1
+                },
                 "w": {
                   "docs": {
                     "/docs/cloud/managed-services": {
@@ -11585,6 +11699,9 @@
                       "/docs/cicd/manage-projects": {
                         "tf": 1
                       },
+                      "/docs/cicd/pipeline-as-code": {
+                        "tf": 1
+                      },
                       "/docs/cicd/pipeline-scheduling-model": {
                         "tf": 1
                       },
@@ -11592,7 +11709,7 @@
                         "tf": 1
                       }
                     },
-                    "df": 4,
+                    "df": 5,
                     "]": {
                       "docs": {},
                       "df": 0,
@@ -11834,9 +11951,12 @@
                   },
                   "/docs/cicd/manage-projects": {
                     "tf": 1
+                  },
+                  "/docs/cicd/pipeline-as-code": {
+                    "tf": 1
                   }
                 },
-                "df": 2,
+                "df": 3,
                 "s": {
                   "docs": {},
                   "df": 0,
@@ -14135,6 +14255,30 @@
                 }
               }
             }
+          },
+          "s": {
+            "docs": {},
+            "df": 0,
+            "p": {
+              "docs": {},
+              "df": 0,
+              "e": {
+                "docs": {},
+                "df": 0,
+                "c": {
+                  "docs": {},
+                  "df": 0,
+                  "i": {
+                    "docs": {
+                      "/docs/cicd/pipeline-as-code": {
+                        "tf": 1
+                      }
+                    },
+                    "df": 1
+                  }
+                }
+              }
+            }
           }
         },
         "r": {
@@ -14695,7 +14839,7 @@
                   "tf": 1
                 },
                 "/docs/cicd/pipeline-as-code": {
-                  "tf": 1
+                  "tf": 1.4142135623730951
                 },
                 "/docs/cicd/pipeline-scheduling-model": {
                   "tf": 1
@@ -14893,7 +15037,7 @@
                     "tf": 1.4142135623730951
                   },
                   "/docs/cicd/pipeline-as-code": {
-                    "tf": 2.6457513110645907
+                    "tf": 2.8284271247461903
                   },
                   "/docs/cicd/pipeline-scheduling-model": {
                     "tf": 1.7320508075688772
@@ -15018,7 +15162,7 @@
               "d": {
                 "docs": {
                   "/docs/cicd/pipeline-as-code": {
-                    "tf": 1
+                    "tf": 1.4142135623730951
                   }
                 },
                 "df": 1
@@ -15523,7 +15667,7 @@
                 "tf": 1
               },
               "/docs/cicd/pipeline-as-code": {
-                "tf": 2
+                "tf": 2.23606797749979
               },
               "/docs/cloud/managed-k8s": {
                 "tf": 1.4142135623730951
